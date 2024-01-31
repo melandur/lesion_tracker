@@ -173,18 +173,27 @@ class Exporter:
         self.subject_1 = subject_1
         self.subject_2 = subject_2
 
-    def __call__(self):
+    def merge_components(self, subject: type(Subject)) -> sitk.Image:
+        """Merge the components of the subject into a single image with correct labels"""
 
-        image = None
-        for id, data in self.subject_2:
-            image_sitk = data['component_sitk']
-            image_sitk = self.change_label_of_lesion(image_sitk, data['context']['label'])
-            if image is None:
-                image = image_sitk
+        img_sitk = None
+        for id, data in subject:
+            component_sitk = data['component_sitk']
+            component_sitk = self.change_label_of_lesion(component_sitk, data['context']['label'])
+            if img_sitk is None:
+                img_sitk = component_sitk
             else:
-                image = sitk.Add(image, image_sitk)
+                img_sitk = sitk.Add(img_sitk, component_sitk)
+        return img_sitk
 
-        sitk.WriteImage(image, '/home/melandur/tmp/img_2.nii.gz')
+    def __call__(self, relabel_subject_1: bool = False):
+
+        if relabel_subject_1:
+            img_1_sitk = self.merge_components(self.subject_1)
+            sitk.WriteImage(img_1_sitk, '/home/melandur/tmp/img_1.nii.gz')
+
+        img_2_sitk = self.merge_components(self.subject_2)
+        sitk.WriteImage(img_2_sitk, '/home/melandur/tmp/img_2.nii.gz')
 
     def get_zero_mask(self, image):
         """Get a zero mask of the image"""
@@ -222,8 +231,8 @@ class Exporter:
 
 
 if __name__ == '__main__':
-    s_2 = Subject('/home/melandur/Code/lesion_tracker/data/MTS39_20190822_TP1_seg.nii.gz')
-    s_1 = Subject('/home/melandur/Code/lesion_tracker/data/MTS39_20200420_TP4_seg.nii.gz')
+    s_1 = Subject('/home/melandur/Code/lesion_tracker/data/MTS39_20190822_TP1_seg.nii.gz')
+    s_2 = Subject('/home/melandur/Code/lesion_tracker/data/MTS39_20200420_TP4_seg.nii.gz')
 
     exp_match = ExpansiveMatching(s_1, s_2)
     s_1, s_2 = exp_match()
@@ -235,4 +244,4 @@ if __name__ == '__main__':
     print(s_2.store)
 
     exporter = Exporter(s_1, s_2)
-    exporter()
+    exporter(relabel_subject_1=True)
