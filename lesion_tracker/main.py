@@ -1,4 +1,5 @@
 import copy
+import os.path
 
 import SimpleITK as sitk
 from scipy.ndimage import rotate
@@ -27,7 +28,11 @@ class Subject:
         cc_filter = sitk.ConnectedComponentImageFilter()
         cc_filter.SetFullyConnected(True)  # Setting to True is less restrictive, gives fewer connected components
 
-        binary_img_sitk = sitk.BinaryThreshold(image1=self.seg_mask_sitk, lowerThreshold=1)
+        binary_img_sitk = sitk.BinaryThreshold(image1=self.seg_mask_sitk,
+                                               lowerThreshold=0,
+                                               upperThreshold=0.5,
+                                               insideValue=0,
+                                               outsideValue=1)
         lesions = cc_filter.Execute(binary_img_sitk)  # connected components
 
         rl_filter = sitk.RelabelComponentImageFilter()
@@ -44,7 +49,13 @@ class Subject:
         """Calculate the center of mass of the image"""
 
         for id, values in self.store.items():
-            component = values['component_sitk']
+            component = copy.deepcopy(values['component_sitk'])  # Copy the component to avoid changing the original
+            origin = component.GetOrigin()
+            direction = component.GetDirection()
+
+            component.SetOrigin((0, 0, 0))  # Set the origin to 0,0,0, centroid is calculated from the origin
+            component.SetDirection((1, 0, 0, 0, 1, 0, 0, 0, 1))  # Set orientation to identity matrix -> centroid
+
             statistics = sitk.LabelShapeStatisticsImageFilter()
             statistics.Execute(component)
 
@@ -60,6 +71,9 @@ class Subject:
                                        center_point[1],
                                        center_point[2],
                                        centroid_value)
+
+            centroid_img_sitk.SetOrigin(origin)
+            centroid_img_sitk.SetDirection(direction)
 
             self.store[id].update({
                 'centroid_sitk': centroid_img_sitk,
@@ -169,9 +183,10 @@ class Analyser:
 
 class Exporter:
 
-    def __init__(self, subject_1: type(Subject), subject_2: type(Subject)):
+    def __init__(self, subject_1: type(Subject), subject_2: type(Subject), dst: str) -> None:
         self.subject_1 = subject_1
         self.subject_2 = subject_2
+        self.dst = dst
 
     def merge_components(self, subject: type(Subject)) -> sitk.Image:
         """Merge the components of the subject into a single image with correct labels"""
@@ -190,10 +205,10 @@ class Exporter:
 
         if relabel_subject_1:
             img_1_sitk = self.merge_components(self.subject_1)
-            sitk.WriteImage(img_1_sitk, '/home/melandur/tmp/img_1.nii.gz')
+            sitk.WriteImage(img_1_sitk, os.path.join(self.dst, 'img_1.nii.gz'))
 
         img_2_sitk = self.merge_components(self.subject_2)
-        sitk.WriteImage(img_2_sitk, '/home/melandur/tmp/img_2.nii.gz')
+        sitk.WriteImage(img_2_sitk, os.path.join(self.dst, 'img_2.nii.gz'))
 
     def get_zero_mask(self, image):
         """Get a zero mask of the image"""
@@ -243,5 +258,5 @@ if __name__ == '__main__':
     print(s_1.store)
     print(s_2.store)
 
-    exporter = Exporter(s_1, s_2)
+    exporter = Exporter(s_1, s_2, '/home/melandur/Downloads/tmp')
     exporter(relabel_subject_1=True)
